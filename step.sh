@@ -2,6 +2,8 @@
 
 join_ws() { local IFS=; local s="${*/#/$1}"; echo "${s#"$1$1$1"}"; }
 joinStrings() { local a=("${@:3}"); printf "%s" "$2${a[@]/#/$1}"; }
+bold=$(tput bold)
+normal=$(tput sgr0)
 
 INVALID_INPUT=false
 if [ -z "$domain" ]; then
@@ -75,20 +77,40 @@ fi
 
 BITBUCKET_API_ENDPOINT="https://$domain/rest/build-status/1.0/commits/$git_clone_commit_hash"
 
-echo "Post build status: $BITBUCKET_BUILD_STATE"
-echo "API Endpoint: $BITBUCKET_API_ENDPOINT"
+echo "${bold}Post build status:${normal} $BITBUCKET_BUILD_STATE"
+echo "${bold}API Endpoint:${normal} $BITBUCKET_API_ENDPOINT"
+
+build_key=`curl $BITBUCKET_API_ENDPOINT \
+  -s \
+  -u $username:$password \
+  -H 'Content-Type: application/json' | jq -r '.values[0].key | select( . != null )'`
+
+if [ -z "$build_key" ]; then
+    # Build status is empty for the given commit, add a new entry
+    echo "Build status is empty for the given commit, adding a new entry"
+    key="Bitrise - Build #$build_number"
+else 
+    # Build status is not empty for the given commit, updating existing entry
+    echo "Build status is not empty for the given commit, updating existing entry"
+    key="$build_key"
+fi
 
 curl $BITBUCKET_API_ENDPOINT \
-  -X POST \
-  -i \
-  -u $username:$password \
-  -H 'Content-Type: application/json' \
-  --data-binary \
-      $"{
-        \"state\": \"$BITBUCKET_BUILD_STATE\",
-        \"key\": \"Bitrise - Build #$build_number \",
-        \"name\": \"Bitrise $app_title #$build_number\",
-        \"url\": \"$build_url\",
-        \"description\": \"workflow: $triggered_workflow_id\"
-       }" \
-   --compressed
+    -X POST \
+    -s \
+    -u $username:$password \
+    -H 'Content-Type: application/json' \
+    --data-binary \
+        $"{
+            \"state\": \"$BITBUCKET_BUILD_STATE\",
+            \"key\": \"$key\",
+            \"name\": \"Bitrise $app_title #$build_number\",
+            \"url\": \"$build_url\",
+            \"description\": \"workflow: $triggered_workflow_id\"
+        }" \
+    --compressed
+
+echo "${bold}Key:${normal} $key"
+echo "${bold}Name:${normal} Bitrise $app_title #$build_number"
+echo "${bold}Url:${normal} $build_url"
+echo "${bold}Description:${normal} workflow: $triggered_workflow_id"
